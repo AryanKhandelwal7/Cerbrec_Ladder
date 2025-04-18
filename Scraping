@@ -1,0 +1,468 @@
+!pip install selenium pandas webdriver-manager requests bs4
+
+import time
+import pandas as pd
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import os
+
+
+# Function to set up and install Chrome for Colab
+def setup_chrome_for_colab():
+    try:
+        # Install Chrome and ChromeDriver using system commands
+        import subprocess
+        print("Updating packages...")
+        subprocess.run(["apt-get", "update"], check=True)
+        print("Installing chromium-browser...")
+        subprocess.run(["apt-get", "install", "-y", "chromium-browser"], check=True)
+        
+        # Try to find chromedriver location
+        import glob
+        chromedriver_paths = glob.glob("/usr/lib/chromium*/chromedriver")
+        if chromedriver_paths:
+            print(f"Found chromedriver at: {chromedriver_paths[0]}")
+            subprocess.run(["cp", chromedriver_paths[0], "/usr/bin/"], check=True)
+        else:
+            print("ChromeDriver not found in expected locations, installing via chromedriver-py")
+            !pip install chromedriver-py
+            from chromedriver_py import binary_path
+            print(f"Using chromedriver from chromedriver-py at: {binary_path}")
+    except Exception as e:
+        print(f"Error during Chrome setup: {e}")
+
+
+    # Set up Chrome options specifically for Colab
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
+
+
+    return chrome_options
+
+
+def scrape_rivals_football_players():
+    print("Setting up Chrome for Google Colab...")
+    chrome_options = setup_chrome_for_colab()
+
+
+    # Initialize driver with Colab-specific options
+    try:
+        # First try with the standard approach
+        driver = webdriver.Chrome(options=chrome_options)
+    except Exception as e:
+        print(f"Standard Chrome initialization failed: {e}")
+        try:
+            # Try with chromedriver-py if available
+            from selenium.webdriver.chrome.service import Service
+            from chromedriver_py import binary_path
+            service = Service(executable_path=binary_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e2:
+            print(f"Alternative Chrome initialization failed: {e2}")
+            # As a last resort, try with webdriver_manager
+            try:
+                print("Attempting with webdriver_manager...")
+                from webdriver_manager.chrome import ChromeDriverManager
+                from selenium.webdriver.chrome.service import Service
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            except Exception as e3:
+                print(f"All Chrome initialization methods failed: {e3}")
+                raise Exception("Unable to initialize Chrome driver")
+
+
+    all_players_data = []
+    
+    try:
+        # The search URL for just the first page
+        search_url = "https://n.rivals.com/search#?formValues=%7B%22sport%22:%22Football%22,%22page_number%22:1,%22page_size%22:50%7D"
+        print(f"Navigating to page: {search_url}")
+        driver.get(search_url)
+
+
+        # Wait for page to load
+        print("Waiting for page to load...")
+        time.sleep(8)  # Give time for the page to load
+
+
+        # Wait for table rows to appear
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "tr, .prospect-row, .search-results-table tbody tr"))
+            )
+            print("Page loaded successfully")
+        except Exception as e:
+            print(f"Timeout waiting for table rows: {e}")
+
+
+        # Get the page source
+        page_source = driver.page_source
+
+
+        # Save the HTML for debugging
+        os.makedirs("debug_pages", exist_ok=True)
+        with open("debug_pages/rivals_search_page.html", "w", encoding="utf-8") as f:
+            f.write(page_source)
+        print("Saved page source for debugging")
+
+
+        # Parse the HTML
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Print some diagnostic info to understand page structure
+        print("Page title:", soup.title.string if soup.title else "No title found")
+        
+        # Look for any tables on the page
+        tables = soup.find_all('table')
+        print(f"Found {len(tables)} tables on the page")
+        
+        # Look for player rows using multiple selector strategies
+        player_rows = soup.select("tr:not(:first-child), .prospect-row, tbody tr")
+        print(f"Initial selector found {len(player_rows)} rows")
+        
+        # If no rows found, try alternative selectors
+        if not player_rows:
+            print("No table rows found. Trying alternative selectors...")
+            player_rows = soup.select("[class*='row'], [class*='prospect'], [class*='player'], [class*='result']")
+            print(f"Alternative selector found {len(player_rows)} rows")
+            
+        # If still no rows, try more general approaches
+        if not player_rows:
+            print("Still no rows found. Trying to identify any links that might be player profiles...")
+            # Look for any link that might contain player information
+            all_links = soup.find_all('a')
+            player_rows = [link for link in all_links if 'profile' in link.get('href', '') or '/prospect/' in link.get('href', '')]
+            print(f"Found {len(player_rows)} potential player links")
+
+
+        # If rows found, extract only name and URL
+        if player_rows:
+            print(f"Processing {len(player_rows)} potential player rows")
+
+
+            for row in player_rows:
+                try:
+                    # Create a dictionary to store only player name and URL
+                    player_data = {}
+                    
+                    # Different extraction strategy based on what we found
+                    if row.name == 'a':  # If the row is actually a direct link
+                        profile_url = row.get('href', '')
+                        if profile_url:
+                            if not profile_url.startswith('http'):
+                                profile_url = f"https://n.rivals.com{profile_url}"
+                            player_data['Profile URL'] = profile_url
+                            
+                            # Try to get name from link text or title attribute
+                            name = row.get_text().strip() or row.get('title', '').strip()
+                            if name:
+                                player_data['Player Name'] = name
+                    else:
+                        # Skip header rows
+                        if row.find('th') or "NAME" in row.get_text():
+                            continue
+                            
+                        # Try multiple strategies to find name and link
+                        # 1. Look for a direct link inside the row
+                        name_element = row.select_one('a, [class*="name"], td:nth-child(1) a')
+                        
+                        if name_element:
+                            player_data['Player Name'] = name_element.get_text().strip()
+                            profile_url = name_element.get('href', '')
+                            if profile_url and not profile_url.startswith('http'):
+                                profile_url = f"https://n.rivals.com{profile_url}"
+                            player_data['Profile URL'] = profile_url
+                        else:
+                            # 2. If no direct link, try to find text that looks like a name and handle separately
+                            name_cell = row.select_one('td:first-child, [class*="name"]')
+                            if name_cell:
+                                player_data['Player Name'] = name_cell.get_text().strip()
+                                
+                                # Look for link in adjacent cells
+                                profile_link = row.select_one('a[href*="/prospect/"]')
+                                if profile_link:
+                                    profile_url = profile_link.get('href', '')
+                                    if profile_url and not profile_url.startswith('http'):
+                                        profile_url = f"https://n.rivals.com{profile_url}"
+                                    player_data['Profile URL'] = profile_url
+
+
+                    # Only add if we have both name and URL
+                    if player_data.get('Player Name') and player_data.get('Profile URL'):
+                        all_players_data.append(player_data)
+                        print(f"Extracted player: {player_data['Player Name']} - {player_data['Profile URL']}")
+
+
+                except Exception as e:
+                    print(f"Error processing player row: {e}")
+
+
+        # If no player rows found through standard methods, try more aggressive JavaScript-based extraction
+        if not all_players_data:
+            print("HTML parsing yielded no results. Attempting JavaScript extraction...")
+
+
+            try:
+                # More comprehensive JavaScript to find player data
+                player_data_js = driver.execute_script("""
+                    const data = [];
+                    
+                    // Strategy 1: Try standard table rows
+                    const rows = document.querySelectorAll('tr:not(:first-child), .prospect-row, tbody tr');
+                    console.log('Found ' + rows.length + ' table rows');
+                    
+                    for (const row of rows) {
+                        // Skip header rows
+                        if (row.querySelector('th') || row.textContent.includes('NAME')) {
+                            continue;
+                        }
+
+
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length < 1) continue;
+
+
+                        const playerData = {};
+
+
+                        // NAME column with URL
+                        const nameElement = cells[0] ? cells[0].querySelector('a') : null;
+                        if (nameElement) {
+                            playerData.name = nameElement.textContent.trim();
+                            playerData.url = nameElement.href;
+                        }
+
+
+                        if (playerData.name && playerData.url) {
+                            data.push(playerData);
+                        }
+                    }
+                    
+                    // Strategy 2: Try any elements that might be player cards
+                    const playerCards = document.querySelectorAll('[class*="player"], [class*="prospect"], [class*="recruit"]');
+                    console.log('Found ' + playerCards.length + ' potential player cards');
+                    
+                    for (const card of playerCards) {
+                        const playerData = {};
+                        const nameElement = card.querySelector('a, [class*="name"]');
+                        if (nameElement) {
+                            playerData.name = nameElement.textContent.trim();
+                            if (nameElement.tagName === 'A') {
+                                playerData.url = nameElement.href;
+                            } else {
+                                const link = card.querySelector('a[href*="/prospect/"]');
+                                if (link) {
+                                    playerData.url = link.href;
+                                }
+                            }
+                        }
+                        
+                        if (playerData.name && playerData.url) {
+                            data.push(playerData);
+                        }
+                    }
+                    
+                    // Strategy 3: Find all links that might be player profiles
+                    const profileLinks = document.querySelectorAll('a[href*="/prospect/"]');
+                    console.log('Found ' + profileLinks.length + ' potential profile links');
+                    
+                    for (const link of profileLinks) {
+                        const playerData = {};
+                        playerData.url = link.href;
+                        playerData.name = link.textContent.trim() || link.getAttribute('title') || link.getAttribute('aria-label') || 'Unknown Player';
+                        
+                        if (playerData.name && playerData.url) {
+                            data.push(playerData);
+                        }
+                    }
+                    
+                    return data;
+                """)
+
+
+                if player_data_js:
+                    print(f"Extracted {len(player_data_js)} players via JavaScript")
+
+
+                    for js_data in player_data_js:
+                        player_data = {
+                            'Player Name': js_data.get('name', ''),
+                            'Profile URL': js_data.get('url', '')
+                        }
+                        if player_data['Player Name'] and player_data['Profile URL']:
+                            all_players_data.append(player_data)
+                            print(f"Extracted via JS: {player_data['Player Name']}")
+
+
+            except Exception as e:
+                print(f"Error during JavaScript extraction: {e}")
+
+
+    except Exception as e:
+        print(f"Error during scraping: {e}")
+
+
+    finally:
+        driver.quit()
+
+
+    # If we still have no data, try a direct scrape of the debug HTML file
+    if not all_players_data and os.path.exists("debug_pages/rivals_search_page.html"):
+        print("Attempting to parse the saved debug HTML file directly...")
+        try:
+            with open("debug_pages/rivals_search_page.html", "r", encoding="utf-8") as f:
+                debug_html = f.read()
+                
+            debug_soup = BeautifulSoup(debug_html, 'html.parser')
+            
+            # Look for any links that might be player profiles
+            player_links = debug_soup.select('a[href*="/prospect/"]')
+            print(f"Found {len(player_links)} potential player links in debug HTML")
+            
+            for link in player_links:
+                player_data = {}
+                player_data['Profile URL'] = link.get('href', '')
+                if not player_data['Profile URL'].startswith('http'):
+                    player_data['Profile URL'] = f"https://n.rivals.com{player_data['Profile URL']}"
+                
+                player_data['Player Name'] = link.get_text().strip() or link.get('title', '').strip() or "Unknown Player"
+                
+                if player_data['Player Name'] and player_data['Profile URL']:
+                    all_players_data.append(player_data)
+                    print(f"Extracted from debug HTML: {player_data['Player Name']}")
+        except Exception as e:
+            print(f"Error processing debug HTML: {e}")
+    
+    # Try to fix any incomplete data
+    cleaned_players_data = []
+    for player in all_players_data:
+        # Ensure URL has proper domain
+        if player.get('Profile URL') and not player['Profile URL'].startswith('http'):
+            player['Profile URL'] = f"https://n.rivals.com{player['Profile URL']}"
+        
+        # Make sure we have both a name and URL
+        if player.get('Player Name') and player.get('Profile URL'):
+            cleaned_players_data.append(player)
+    
+    # Create and save the DataFrame with only Player Name and Profile URL
+    if cleaned_players_data:
+        df = pd.DataFrame(cleaned_players_data)
+
+
+        # Remove duplicates
+        df = df.drop_duplicates(subset=['Player Name', 'Profile URL'])
+
+
+        # Make sure we have exactly the columns we want
+        df = df[['Player Name', 'Profile URL']]
+
+
+        # Save to CSV
+        df.to_csv('rivals_football_players_simple.csv', index=False)
+        print(f"Successfully scraped {len(df)} players. Data saved to 'rivals_football_players_simple.csv'")
+        print("\nSample of scraped data:")
+        print(df.head())
+
+
+        return df
+    else:
+        print("All scraping methods failed. No player data collected.")
+        return None
+
+
+# Add a backup direct request method
+def direct_request_scrape():
+    """Try a direct request to the website without Selenium"""
+    print("Attempting direct request scraping as a last resort...")
+    
+    import requests
+    from bs4 import BeautifulSoup
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0',
+    }
+    
+    url = "https://n.rivals.com/search#?formValues=%7B%22sport%22:%22Football%22,%22page_number%22:1,%22page_size%22:50%7D"
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        # Save the HTML for debugging
+        os.makedirs("debug_pages", exist_ok=True)
+        with open("debug_pages/rivals_direct_request.html", "w", encoding="utf-8") as f:
+            f.write(response.text)
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for player links
+        player_links = soup.select('a[href*="/prospect/"]')
+        print(f"Found {len(player_links)} potential player links with direct request")
+        
+        all_players_data = []
+        
+        for link in player_links:
+            player_data = {}
+            player_data['Profile URL'] = link.get('href', '')
+            if not player_data['Profile URL'].startswith('http'):
+                player_data['Profile URL'] = f"https://n.rivals.com{player_data['Profile URL']}"
+            
+            player_data['Player Name'] = link.get_text().strip() or link.get('title', '').strip() or "Unknown Player"
+            
+            if player_data['Player Name'] and player_data['Profile URL']:
+                all_players_data.append(player_data)
+                print(f"Extracted from direct request: {player_data['Player Name']}")
+        
+        if all_players_data:
+            df = pd.DataFrame(all_players_data)
+            df = df.drop_duplicates(subset=['Player Name', 'Profile URL'])
+            df = df[['Player Name', 'Profile URL']]
+            df.to_csv('rivals_football_players_direct.csv', index=False)
+            print(f"Successfully scraped {len(df)} players with direct request. Data saved to 'rivals_football_players_direct.csv'")
+            return df
+    
+    except Exception as e:
+        print(f"Direct request scraping failed: {e}")
+    
+    return None
+
+
+# Run the simplified scraper with backup options
+if __name__ == "__main__":
+    print("Starting simplified scraping for one page...")
+    try:
+        df = scrape_rivals_football_players()
+        
+        # If Selenium method fails, try direct request
+        if df is None or len(df) == 0:
+            print("Selenium scraping failed. Trying direct request method...")
+            df = direct_request_scrape()
+        
+        if df is None or len(df) == 0:
+            print("All scraping methods failed. Unable to collect player data.")
+        else:
+            print("Scraping completed successfully.")
+    except Exception as e:
+        print(f"An error occurred during scraping: {e}")
+        print("Trying direct request method as fallback...")
+        df = direct_request_scrape()
+        
+        if df is None or len(df) == 0:
+            print("All scraping methods failed. Unable to collect player data.")
+
+
+
