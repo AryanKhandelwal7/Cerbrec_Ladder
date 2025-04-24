@@ -20,4 +20,15 @@ pip install selenium pandas webdriver-manager requests beautifulsoup4
 
 __Usage__
 
-- Run the script using : python rivals_scraper.py
+- Run the script using the following command
+```
+python rivals_scraper.py
+```
+
+__Functioning of the scraper__
+
+This code is meant to scrape the players information present on the rivals website. Following is a step by step procedure of it's execution:
+- STEP 1: INPUT PLAYER NAME -- Given the name of the player, the scraper starts its execution process by navigating to the website and searching for the name
+- STEP 2: SEARCHING PROCESS -- Over a database of more than 10,000 players, the scraper finds the player and navigates to the player information page
+- STEP 3: LOADING PLAYER INFORMATION -- The scraper initially extracts the player name, school, and the URL from the webpage
+- STEP 4: STORED IN A CSV FILE -- The data is then stored into a CSV file
