@@ -34,3 +34,6 @@ __Player Information Extracted__
 
 __Installation__
 
+1. Install Python packages:
+
+   pip install selenium pandas webdriver-manager requests bs4 anthropic
