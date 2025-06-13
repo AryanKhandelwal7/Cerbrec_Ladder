@@ -1,34 +1,36 @@
-__Rivals Football Player Scraper__
+__Rivals Football Recruit Scraper 🏈__
 
-This repository contains a Python-based web scraper that uses Selenium and BeautifulSoup to automatically search for American football players on [Rivals.com](https://n.rivals.com), extract key information such as the player’s name, school, and profile URL, and save the data into a CSV file.
+A lightning-fast Python tool that searches for high school football players on Rivals.com and extracts their recruiting information using AI-powered data extraction.
 
-__🚀 Features__
+__What It Does__
 
-- Automates the search process on Rivals.com using Selenium WebDriver
-- Extracts player name, school, and profile URL from the results or profile page
-- Supports two fallback search methods for robust results
-- Saves and appends results into a `player_info.csv` file
-- Captures HTML pages and screenshots for debugging
-- Works in both local environments and Google Colab
+This scraper helps you quickly gather recruiting data for high school football players by:
+
+- Searching Rivals.com for any player by name
+- Extracting detailed player information from their profile pages
+- Using Claude AI to intelligently parse player data
+- Saving all results to a CSV file for easy analysis
+
+__Features__
+
+- ⚡ Ultra Fast - Optimized for speed with aggressive timeouts and minimal waiting
+- 🤖 AI-Powered - Uses Claude AI to extract data accurately from complex web pages
+- 📊 CSV Export - Automatically saves player data to a spreadsheet
+- 🔍 Smart Search - Finds player profiles even with partial name matches
+- 📈 Data Tracking - Prevents duplicates and appends new players to existing data
+
+__Player Information Extracted__
+
+- Name - Full player name
+- High School - Current or former high school
+- College Commitment - Which college they've committed to (if any)
+- Position - Football position (QB, RB, WR, etc.)
+- Height & Weight - Physical measurements
+- Class Year - Graduation year
+- Rating - Rivals recruiting rating
+- Star Rating - Star ranking (3-star, 4-star, etc.)
+- Location - City and state
+- Profile URL - Direct link to their Rivals profile
 
 __Installation__
 
-- Install the required dependencies using pip:
-```bash
-pip install selenium pandas webdriver-manager requests beautifulsoup4
-```
-
-__Usage__
-
-- Run the script using the following command
-```
-python rivals_scraper.py
-```
-
-__Functioning of the scraper__
-
-This code is meant to scrape the players information present on the rivals website. Following is a step by step procedure of it's execution:
-- STEP 1: INPUT PLAYER NAME -- Given the name of the player, the scraper starts its execution process by navigating to the website and searching for the name
-- STEP 2: SEARCHING PROCESS -- Over a database of more than 10,000 players, the scraper finds the player and navigates to the player information page
-- STEP 3: LOADING PLAYER INFORMATION -- The scraper initially extracts the player name, school, and the URL from the webpage
-- STEP 4: STORED IN A CSV FILE -- The data is then stored into a CSV file
