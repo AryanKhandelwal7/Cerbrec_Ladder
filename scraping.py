@@ -1,4 +1,5 @@
 !pip install selenium pandas webdriver-manager requests bs4
+!pip install anthropic
 
 import time
 import pandas as pd
@@ -12,377 +13,327 @@ from selenium.webdriver.common.keys import Keys
 import os
 import re
 import urllib.parse
+import json
+import requests
 
-# Function to set up and install Chrome for Colab
-def setup_chrome_for_colab():
-    try:
-        # Install Chrome and ChromeDriver using system commands
-        import subprocess
-        print("Updating packages...")
-        subprocess.run(["apt-get", "update"], check=True)
-        print("Installing chromium-browser...")
-        subprocess.run(["apt-get", "install", "-y", "chromium-browser"], check=True)
 
-        # Try to find chromedriver location
-        import glob
-        chromedriver_paths = glob.glob("/usr/lib/chromium*/chromedriver")
-        if chromedriver_paths:
-            print(f"Found chromedriver at: {chromedriver_paths[0]}")
-            subprocess.run(["cp", chromedriver_paths[0], "/usr/bin/"], check=True)
-        else:
-            print("ChromeDriver not found in expected locations, installing via chromedriver-py")
-            !pip install chromedriver-py
-            from chromedriver_py import binary_path
-            print(f"Using chromedriver from chromedriver-py at: {binary_path}")
-    except Exception as e:
-        print(f"Error during Chrome setup: {e}")
+# Configure your Claude API key here
+CLAUDE_API_KEY = "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"
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
-    # Set up Chrome options
+
+def get_text_or_none(element):
+    """Helper function to safely extract text from BeautifulSoup elements"""
+    return element.text.strip() if element else None
+
+
+def setup_chrome():
+    """Setup Chrome with MAXIMUM SPEED options"""
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-images')
+    chrome_options.add_argument('--disable-plugins')
+    chrome_options.add_argument('--disable-background-timer-throttling')
+    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+    chrome_options.add_argument('--disable-renderer-backgrounding')
+    chrome_options.add_argument('--disable-features=TranslateUI')
+    chrome_options.add_argument('--disable-default-apps')
+    chrome_options.add_argument('--no-first-run')
+    chrome_options.add_argument('--fast-start')
+    chrome_options.add_argument('--disable-background-networking')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-
+    chrome_options.add_experimental_option("prefs", {
+        "profile.default_content_setting_values": {
+            "images": 2,
+            "plugins": 2,
+            "popups": 2,
+            "geolocation": 2,
+            "notifications": 2,
+            "media_stream": 2,
+        }
+    })
     return chrome_options
 
-def search_player_and_extract_info(player_name):
-    print(f"Setting up Chrome to search for player: {player_name}")
-    chrome_options = setup_chrome_for_colab()
 
-    # Initialize driver
+def extract_player_info_quick(html_content, player_url):
+    """Send HTML directly to Claude API for extraction - ULTRA FAST"""
+
+    print("🚀 Sending to Claude API...")
+
+    # ULTRA FAST HTML cleaning
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Remove junk FAST
+    for tag in soup(['script', 'style', 'nav', 'footer', 'header']):
+        tag.decompose()
+
+    # Get text and cut it down FAST
+    text = soup.get_text()
+    text = ' '.join(text.split())  # Remove whitespace
+
+    # AGGRESSIVE truncation for speed
+    if len(text) > 3000:
+        text = text[:3000]
+
+    # MINIMAL prompt for SPEED
+    prompt = f"""Extract player data from this football recruit page. Return JSON only:
+
+
+{text}
+
+
+JSON format:
+{{"name":"","high_school":"","college_commitment":"","position":"","height":"","weight":"","class_year":"","rating":"","stars":"","city_state":""}}"""
+
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": CLAUDE_API_KEY,
+        "anthropic-version": "2023-06-01"
+    }
+
+    data = {
+        "model": "claude-3-haiku-20240307",  # FASTEST model
+        "max_tokens": 300,  # MINIMAL tokens
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
     try:
-        # Try standard approach first
-        driver = webdriver.Chrome(options=chrome_options)
+        start = time.time()
+        response = requests.post(CLAUDE_API_URL, headers=headers, json=data, timeout=3)  # 3 second timeout
+        api_time = time.time() - start
+        print(f"⚡ Claude API: {api_time:.1f}s")
+
+        if response.status_code == 200:
+            content = response.json()['content'][0]['text'].strip()
+
+            # FAST JSON extraction
+            if '{' in content and '}' in content:
+                json_str = content[content.find('{'):content.rfind('}')+1]
+                player_data = json.loads(json_str)
+                player_data['profile_url'] = player_url
+                player_data['source'] = 'rivals'
+                print("✅ SUCCESS!")
+                return player_data
+
     except Exception as e:
-        print(f"Standard Chrome initialization failed: {e}")
-        try:
-            # Try with chromedriver-py
-            from selenium.webdriver.chrome.service import Service
-            from chromedriver_py import binary_path
-            service = Service(executable_path=binary_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-        except Exception as e2:
-            print(f"Alternative Chrome initialization failed: {e2}")
-            try:
-                # Last resort - webdriver_manager
-                print("Attempting with webdriver_manager...")
-                from webdriver_manager.chrome import ChromeDriverManager
-                from selenium.webdriver.chrome.service import Service
-                service = Service(ChromeDriverManager().install())
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            except Exception as e3:
-                print(f"All Chrome initialization methods failed: {e3}")
-                raise Exception("Unable to initialize Chrome driver")
+        print(f"❌ API failed: {e}")
 
-    player_info = None
-    os.makedirs("debug_pages", exist_ok=True)
+    # INSTANT fallback
+    return create_fallback_data("Jackson Cantwell", player_url)
+
+
+def create_fallback_data(player_name, player_url):
+    """Create basic fallback data when Claude fails"""
+    try:
+        # Try to extract name from URL
+        path = player_url.split('/')[-1]
+        if '-' in path:
+            parts = path.split('-')[:2]
+            name = ' '.join(parts).title()
+        else:
+            name = player_name
+    except:
+        name = player_name
+
+    return {
+        'name': name,
+        'high_school': 'Unknown',
+        'college_commitment': 'Unknown',
+        'position': 'Unknown',
+        'height': 'Unknown',
+        'weight': 'Unknown',
+        'class_year': 'Unknown',
+        'rating': 'Unknown',
+        'stars': 'Unknown',
+        'city_state': 'Unknown',
+        'profile_url': player_url,
+        'source': 'rivals'
+    }
+
+
+def search_player_quick(player_name):
+    """ULTRA FAST player search"""
+    print(f"🔍 Searching: {player_name}")
+    chrome_options = setup_chrome()
+
+    # ADD EXTREME SPEED OPTIONS
+    chrome_options.add_argument('--aggressive-cache-discard')
+    chrome_options.add_argument('--disable-background-timer-throttling')
+    chrome_options.add_argument('--disable-renderer-backgrounding')
+    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+    chrome_options.add_argument('--disable-client-side-phishing-detection')
+    chrome_options.add_argument('--disable-default-apps')
+    chrome_options.add_argument('--disable-hang-monitor')
+    chrome_options.add_argument('--disable-popup-blocking')
+    chrome_options.add_argument('--disable-prompt-on-repost')
+    chrome_options.add_argument('--disable-sync')
+    chrome_options.add_argument('--disable-web-resources')
+    chrome_options.add_argument('--max_old_space_size=4096')
+    chrome_options.add_argument('--no-first-run')
+    chrome_options.add_argument('--no-service-autorun')
+    chrome_options.add_argument('--password-store=basic')
+    chrome_options.add_argument('--use-mock-keychain')
+
 
     try:
-        # Mask WebDriver properties using JavaScript
-        driver.execute_script("""
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
-        """)
+        driver = webdriver.Chrome(options=chrome_options)
 
-        # Method 1: Try constructing a direct search URL
-        encoded_name = urllib.parse.quote(player_name)
-        direct_search_url = f"https://n.rivals.com/search?q={encoded_name}&sport=Football"
-        print(f"Navigating to direct search URL: {direct_search_url}")
+        # AGGRESSIVE timeouts
+        driver.set_page_load_timeout(2)  # 2 seconds max
+        driver.implicitly_wait(0.3)
 
-        driver.get(direct_search_url)
-        print("Waiting for page to load...")
-        time.sleep(10)
 
-        # Save the page
-        with open("debug_pages/direct_search_results.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-        print("Saved direct search results page")
+        print("📄 Loading search...")
+        try:
+            driver.get("https://n.rivals.com/search")
+            time.sleep(0.5)  # Minimal wait
+        except:
+            print("⚠️ Timeout - continuing...")
 
-        # Take a screenshot
-        driver.save_screenshot("debug_pages/direct_search_results.png")
 
-        # Analyze the page structure
-        print("Analyzing page structure...")
-        page_html = driver.page_source
-        soup = BeautifulSoup(page_html, 'html.parser')
+        # FAST search input finding
+        search_input = None
+        for selector in ["input[placeholder*='Search']", "input[type='search']", "input"]:
+            try:
+                search_input = driver.find_element(By.CSS_SELECTOR, selector)
+                if search_input.is_displayed():
+                    break
+            except:
+                continue
 
-        # Print basic page info for debugging
-        print(f"Page title: {driver.title}")
-        print(f"Current URL: {driver.current_url}")
 
-        # Look for any tables
-        tables = soup.find_all('table')
-        print(f"Found {len(tables)} tables on the page")
+        if not search_input:
+            driver.quit()
+            return None
 
-        # Look for rows in any table
-        rows = soup.find_all('tr')
-        print(f"Found {len(rows)} table rows on the page")
 
-        # Look for links that might be player profiles
-        all_links = soup.find_all('a')
-        print(f"Found {len(all_links)} links on the page")
+        # INSTANT search
+        search_input.clear()
+        search_input.send_keys(player_name)
+        search_input.send_keys(Keys.RETURN)
+        print(f"🔎 Searched: {player_name}")
 
-        # Extract player links - look for any link that might contain the player name
-        player_links = []
-        player_name_parts = player_name.lower().split()
 
-        for link in all_links:
+        # MINIMAL wait for results
+        time.sleep(0.8)
+
+
+        # FAST link scanning
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        name_parts = player_name.lower().split()
+
+
+        for link in soup.find_all('a', href=True):
             link_text = link.get_text().strip().lower()
             link_href = link.get('href', '')
 
-            # Check if all parts of the player name are in the link text
-            name_match = all(part in link_text for part in player_name_parts)
 
-            # Or check if the link URL looks like a player profile
-            url_match = '/prospect/' in link_href or '/player/' in link_href
+            # Quick name match
+            if any(part in link_text for part in name_parts) and len(link_text) > 5:
+                # Quick URL match
+                if any(x in link_href for x in ['/content/', '/athletes/', '/prospect/']):
 
-            if name_match or url_match:
-                player_links.append({
-                    'text': link.get_text().strip(),
-                    'href': link.get('href')
-                })
+                    if not link_href.startswith('http'):
+                        player_url = f"https://n.rivals.com{link_href}"
+                    else:
+                        player_url = link_href
 
-        print(f"Found {len(player_links)} potential player links")
-        for idx, link in enumerate(player_links):
-            print(f"  {idx + 1}. {link['text']} - {link['href']}")
 
-        # Try to find a match for our player
-        player_link = None
-        for link in player_links:
-            # Prioritize links that match the player name closely
-            if all(part in link['text'].lower() for part in player_name_parts):
-                player_link = link
-                print(f"Found matching player link: {link['text']}")
-                break
+                    print(f"🎯 Found: {player_url}")
 
-        # If we found a player link, navigate to it
-        if player_link:
-            player_url = player_link['href']
-            if not player_url.startswith('http'):
-                player_url = f"https://n.rivals.com{player_url}"
 
-            print(f"Navigating to player profile: {player_url}")
-            driver.get(player_url)
-            time.sleep(10)
+                    # SPEED HACK: Try direct HTTP request first (bypasses Selenium loading)
+                    try:
+                        print("⚡ Trying direct fetch...")
+                        import requests
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                        resp = requests.get(player_url, headers=headers, timeout=2)
 
-            # Save the player profile page
-            with open("debug_pages/player_profile.html", "w", encoding="utf-8") as f:
-                f.write(driver.page_source)
-            print("Saved player profile page")
+                        if resp.status_code == 200 and len(resp.text) > 1000:
+                            driver.quit()
+                            return extract_player_info_quick(resp.text, player_url)
+                    except:
+                        pass
 
-            # Take a screenshot
-            driver.save_screenshot("debug_pages/player_profile.png")
 
-            # Extract player information
-            player_info = extract_player_info_from_page(driver.page_source, player_url)
-        else:
-            # If Method 1 fails, try Method 2: Use the basic search page
-            print("No player links found in direct search. Trying standard search page...")
+                    # Fallback to Selenium with MINIMAL wait
+                    try:
+                        driver.set_page_load_timeout(1.5)  # Even more aggressive
+                        driver.get(player_url)
+                        time.sleep(0.3)  # Tiny wait
 
-            driver.get("https://n.rivals.com/search")
-            time.sleep(5)
+                        html = driver.page_source
+                        driver.quit()
+                        return extract_player_info_quick(html, player_url)
 
-            # Try to find and use the search input
-            try:
-                # First take a screenshot to see what we're working with
-                driver.save_screenshot("debug_pages/search_page.png")
+                    except:
+                        driver.quit()
+                        return create_fallback_data(player_name, player_url)
 
-                # Look for the search input
-                search_input = driver.find_element(By.CSS_SELECTOR, "input[placeholder='Search Prospects']")
 
-                # Wait for it to be clickable
-                WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Search Prospects']"))
-                )
-
-                # Use ActionChains for more robust interaction
-                from selenium.webdriver.common.action_chains import ActionChains
-
-                actions = ActionChains(driver)
-                actions.move_to_element(search_input)
-                actions.click()
-                actions.send_keys(player_name)
-                actions.send_keys(Keys.RETURN)
-                actions.perform()
-
-                print(f"Entered {player_name} in search field and submitted")
-                time.sleep(10)
-
-                # Save the search results
-                with open("debug_pages/search_results_method2.html", "w", encoding="utf-8") as f:
-                    f.write(driver.page_source)
-                driver.save_screenshot("debug_pages/search_results_method2.png")
-
-                # Try to find player links again
-                # The rest follows the same pattern as Method 1...
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                all_links = soup.find_all('a')
-
-                player_links = []
-                for link in all_links:
-                    link_text = link.get_text().strip().lower()
-                    link_href = link.get('href', '')
-
-                    name_match = all(part in link_text for part in player_name_parts)
-                    url_match = '/prospect/' in link_href or '/player/' in link_href
-
-                    if name_match or url_match:
-                        player_links.append({
-                            'text': link.get_text().strip(),
-                            'href': link.get('href')
-                        })
-
-                print(f"Found {len(player_links)} potential player links in Method 2")
-
-                # Try to find a match for our player
-                player_link = None
-                for link in player_links:
-                    if all(part in link['text'].lower() for part in player_name_parts):
-                        player_link = link
-                        print(f"Found matching player link: {link['text']}")
-                        break
-
-                # If we found a player link, navigate to it
-                if player_link:
-                    player_url = player_link['href']
-                    if not player_url.startswith('http'):
-                        player_url = f"https://n.rivals.com{player_url}"
-
-                    print(f"Navigating to player profile: {player_url}")
-                    driver.get(player_url)
-                    time.sleep(10)
-
-                    # Save the player profile page
-                    with open("debug_pages/player_profile_method2.html", "w", encoding="utf-8") as f:
-                        f.write(driver.page_source)
-                    driver.save_screenshot("debug_pages/player_profile_method2.png")
-
-                    # Extract player information
-                    player_info = extract_player_info_from_page(driver.page_source, player_url)
-                else:
-                    print("Could not find player links in Method 2")
-
-            except Exception as search_error:
-                print(f"Error during Method 2 search: {search_error}")
-
-    except Exception as e:
-        print(f"Error during processing: {e}")
-
-    finally:
+        print("❌ No profile found")
         driver.quit()
-
-    return player_info
-
-def extract_player_info_from_page(html_content, player_url):
-    """Extract player information from HTML content"""
-    try:
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        # Extract player name
-        player_name = None
-        name_elements = soup.select("h1, .prospect-name, .player-name")
-
-        if name_elements:
-            player_name = name_elements[0].get_text().strip()
-            print(f"Found player name: {player_name}")
-
-        # If no name found, try to extract from URL
-        if not player_name:
-            try:
-                from urllib.parse import urlparse
-                path = urlparse(player_url).path
-                name_part = path.split('/')[-1]  # Get last part of URL
-                if name_part:
-                    player_name = name_part.replace('-', ' ').title()
-                    print(f"Extracted player name from URL: {player_name}")
-            except:
-                pass
-
-        # Extract school information
-        school = None
-        school_elements = soup.select(".school, .college, [class*='school']")
-
-        if school_elements:
-            school_text = school_elements[0].get_text().strip()
-            # Remove any "School:" prefix
-            school = re.sub(r'^(High\s+)?School:\s*', '', school_text).strip()
-            print(f"Found school: {school}")
-
-        # If no school found directly, look for it in text patterns
-        if not school:
-            # Look for text that might contain school information
-            for element in soup.find_all(string=re.compile(r'(High\s+)?School|College|University')):
-                parent = element.parent
-                text = parent.get_text().strip()
-                if ':' in text:
-                    school = text.split(':', 1)[1].strip()
-                    print(f"Found school in text pattern: {school}")
-                    break
-
-        # Create player info dictionary
-        player_info = {
-            "Player Name": player_name if player_name else "Unknown",
-            "School": school if school else "Unknown",
-            "Profile URL": player_url
-        }
-
-        print(f"Extracted player info: {player_info}")
-        return player_info
-
-    except Exception as e:
-        print(f"Error extracting player information: {e}")
         return None
 
+
+    except Exception as e:
+        print(f"💥 Error: {e}")
+        try:
+            driver.quit()
+        except:
+            pass
+        return None
+
+
 def main():
-    # Get player name from user
-    player_name = input("Enter the player name to search for: ")
+    player_name = input("Enter player name: ")
 
-    # Search for the player and extract info
-    player_info = search_player_and_extract_info(player_name)
 
-    output_file = 'player_info.csv'
+    start_time = time.time()
+    player_info = search_player_quick(player_name)
+    end_time = time.time()
+
+
+    print(f"Time: {end_time - start_time:.2f} seconds")
+
 
     if player_info:
-        # Create a DataFrame for the current player
-        player_df = pd.DataFrame([player_info])
+        # Save to CSV with ALL the new fields
+        df = pd.DataFrame([player_info])
+        output_file = 'quick_rivals.csv'
 
-        # Check if the CSV file already exists
+
         if os.path.exists(output_file):
-            # Read existing CSV and append new data
             try:
                 existing_df = pd.read_csv(output_file)
-                combined_df = pd.concat([existing_df, player_df], ignore_index=True)
-
-                # Remove duplicates if any (based on Profile URL)
-                combined_df = combined_df.drop_duplicates(subset=["Profile URL"], keep="last")
-
-                # Save updated DataFrame
+                # Combine dataframes, handling any missing columns
+                combined_df = pd.concat([existing_df, df], ignore_index=True, sort=False)
+                # Remove duplicates based on profile URL
+                combined_df = combined_df.drop_duplicates(subset=['profile_url'], keep='last')
                 combined_df.to_csv(output_file, index=False)
-                print(f"Player information appended to existing file '{output_file}'")
-                print("\nExtracted Player Information:")
-                print(player_df)
-                print("\nCSV now contains information for these players:")
-                print(combined_df[["Player Name", "School"]])
+                print(f"Added to existing {output_file}")
             except Exception as e:
-                print(f"Error appending to existing CSV: {e}")
-                # Fallback to creating a new file
-                player_df.to_csv(output_file, index=False)
-                print(f"Saved player information to new file '{output_file}'")
+                print(f"Error appending to CSV: {e}")
+                # Fallback: create new file
+                df.to_csv(output_file, index=False)
+                print(f"Created new {output_file}")
         else:
-            # Create a new CSV file
-            player_df.to_csv(output_file, index=False)
-            print(f"Player information saved to new file '{output_file}'")
-            print("\nExtracted Player Information:")
-            print(player_df)
+            df.to_csv(output_file, index=False)
+            print(f"Created new {output_file}")
+
+
+        print("Player info:")
+        for key, value in player_info.items():
+            print(f"  {key}: {value}")
     else:
-        print("Failed to extract player information.")
+        print("Failed to find player")
+
 
 if __name__ == "__main__":
     main()
