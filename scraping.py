@@ -18,7 +18,7 @@ import requests
 
 
 # Configure your Claude API key here
-CLAUDE_API_KEY = "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"
+CLAUDE_API_KEY = "ENTER_CLAUDE_API_KEY"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
 
