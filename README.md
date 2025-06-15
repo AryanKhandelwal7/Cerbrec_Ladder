@@ -47,26 +47,25 @@ __Setup__
 
 **Important**: You need to add your own Claude API key to make this work.
 
-In the code, find this line:
+In the `info_scraper.py` file, find this line:
 `CLAUDE_API_KEY = "your-api-key-here"`
 
 Replace "your-api-key-here" with your actual Claude API key from Anthropic.
 
 __How to Use__
 
-1. Run the script:
-   `python scraper.py`
+STEP 1. Find Player URLs
+- Run the URL scraper: `python url_scraper.py`
+- Enter a player name when prompted: `Enter player name: Jackson Smith`
+- Wait for results - Takes 10-15 seconds per search
+- Repeat for all players you want to search
+- Results saved automatically to `player_urls.csv`
 
-2. Enter a player name when prompted:
-   `Enter player name: Jackson Smith`
-
-3. **Wait for results** - The script will:
-   - Search Rivals.com
-   - Find the player's profile
-   - Extract their information using AI
-   - Save data to quick_rivals.csv
-
-4. Check your results in the CSV file that gets created
+Step 2: Extract Player Information
+- Run the info scraper: `python info_scraper.py`
+- Script automatically processes all URLs from `player_urls.csv`
+- Wait for AI extraction - Takes 3-5 seconds per player
+- Final results saved to `scraped_players.csv`
 
 __Example Output__
 
@@ -84,11 +83,18 @@ __Example Output__
 
 __How It Works__
 
-1. Fast Setup - Configures Chrome browser with speed optimizations
-2. Smart Search - Goes to Rivals search page and looks for the player
-3. Quick Extraction - Grabs the player's profile page content
-4. AI Processing - Sends page content to Claude AI for data extraction
-5. Data Saving - Stores results in CSV format
+URL Scraper (url_scraper.py)
+- Fast Setup - Configures Chrome browser with speed optimizations
+- Smart Search - Goes to Rivals search page and looks for the player
+- Profile Finding - Uses multiple methods to locate player profile URLs
+- Data Saving - Stores URLs in player_urls.csv
+
+Info Scraper (info_scraper.py)
+
+- Page Fetching - Grabs player profile page content efficiently
+- AI Processing - Sends page content to Claude AI for data extraction
+- Data Parsing - Converts AI response to structured data
+- CSV Export - Saves results to scraped_players.csv
 
 __Speed Optimizations__
 
@@ -102,8 +108,9 @@ This scraper is built for speed with:
 
 __Files Created__
 
-- `quick_rivals.csv` - Contains all player data in spreadsheet format
-- Gets updated automatically each time you run the script
+- player_urls.csv - Contains player names and their Rivals profile URLs
+- scraped_players.csv - Contains all extracted player data in spreadsheet format
+- Gets updated automatically each time you run the scripts
 - Prevents duplicate entries
 
 __Troubleshooting__
